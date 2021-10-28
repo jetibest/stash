@@ -1,0 +1,3 @@
+stash_cache/
+node_modules/
+package-lock.json

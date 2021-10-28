@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Stash</title>
+</head>
+<body>
+<style>
+html,body
+{width: 100%;height: 100%;box-sizing: border-box;margin: 0;}
+body
+{border: 2px solid red;display: flex;flex-direction: column;}
+form.textupload
+{flex-grow: 1;display: flex;flex-direction: column;}
+form.textupload textarea
+{flex-grow: 1;}
+textarea
+{display: block;box-sizing: border-box;width: 100%;}
+</style>
+	<form method="POST" action="$__SERVER_PATH$__RANDOM_PATH.txt" enctype="multipart/form-data" class="textupload">
+		<textarea name="data"></textarea>
+		<button type="submit">
+			Stash
+		</button>
+	</form>
+	<aside>
+		<form method="POST" action="$__SERVER_PATH$__RANDOM_PATH" enctype="multipart/form-data" class="fileupload">
+			<input type="file" name="data">
+			<button type="submit">
+				Stash
+			</button>
+		</form>
+	</aside>
+<script>
+document.querySelector('aside').style.display = 'none'; // if no javascript, fallback to showing file input
+document.body.ondragover = function(e)
+{
+	e.preventDefault() 
+}
+document.body.ondrop = function(e)
+{
+	if(e.dataTransfer && e.dataTransfer.files)
+	{
+		e.preventDefault();
+		
+		var fileInput = document.querySelector('input[type="file"]');
+		fileInput.files = e.dataTransfer.files;
+		
+		var fileForm = document.querySelector('form.fileupload');
+		fileForm.action += '/' + fileInput.files[0].name;
+		fileForm.submit();
+	}
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+{
+  "name": "stash",
+  "version": "1.0.0",
+  "description": "Stash webserver for temporary file storage.",
+  "main": "stash",
+  "dependencies": {
+    "busboy": "latest",
+    "express": "latest"
+  }
+}
