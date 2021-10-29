@@ -8,23 +8,33 @@
 html,body
 {width: 100%;height: 100%;box-sizing: border-box;margin: 0;}
 body
-{border: 2px solid red;display: flex;flex-direction: column;}
+{display: flex;flex-direction: column;background-color: #f9f9f9;}
 form.textupload
-{flex-grow: 1;display: flex;flex-direction: column;}
+{flex-grow: 1;display: flex;flex-direction: column;margin: 20px;}
 form.textupload textarea
 {flex-grow: 1;}
+form.textupload button
+{margin-top: 20px;}
 textarea
-{display: block;box-sizing: border-box;width: 100%;}
+{display: block;box-sizing: border-box;width: 100%;border: none;resize: none;outline: none;background-color: #fff;box-shadow: 3px 3px 15px 0px rgba(0,0,0,0.1);font-size: 14px;line-height: 1.2;border: 1px solid #eee;}
+textarea:focus
+{border-color: #39f;}
+button
+{height: 60px;background-color: #393;color: #fff;font-size: 20px;border: none;box-shadow: 3px 3px 15px 0px rgba(0,0,0,0.1);cursor: pointer;outline: none;}
+button:hover
+{background-color: #6c6;}
+button:focus
+{text-decoration: underline;background-color: #060;}
 </style>
-	<form method="POST" action="$__SERVER_PATH$__RANDOM_PATH.txt" enctype="multipart/form-data" class="textupload">
+	<form method="POST" action="$__SERVER_PATH$__RANDOM_PATH.txt?redirect=yes" enctype="multipart/form-data" class="textupload">
 		<textarea name="data"></textarea>
 		<button type="submit">
 			Stash
 		</button>
 	</form>
 	<aside>
-		<form method="POST" action="$__SERVER_PATH$__RANDOM_PATH" enctype="multipart/form-data" class="fileupload">
-			<input type="file" name="data">
+		<form method="POST" action="$__SERVER_PATH$__RANDOM_PATH?redirect=yes" enctype="multipart/form-data" class="fileupload">
+			<input type="file" name="data" onchange="this.parentNode.action='$__SERVER_PATH$__RANDOM_PATH/' + this.files[0].name + '?redirect=yes';">
 			<button type="submit">
 				Stash
 			</button>
@@ -46,7 +56,7 @@ document.body.ondrop = function(e)
 		fileInput.files = e.dataTransfer.files;
 		
 		var fileForm = document.querySelector('form.fileupload');
-		fileForm.action += '/' + fileInput.files[0].name;
+		fileForm.action = '$__SERVER_PATH$__RANDOM_PATH/' + fileInput.files[0].name + '?redirect=yes';
 		fileForm.submit();
 	}
 };

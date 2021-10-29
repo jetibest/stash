@@ -8,10 +8,15 @@ const crypto = require('crypto');
 const express = require('express'); // npm install express
 const busboy = require('busboy'); // npm install busboy
 
+// support at least 5GiB per 6 hours by default, resulting in a stash_cache directory of at most 10GiB
+// by default listens locally (127.0.0.1), change to 0.0.0.0 to make available publicly
+// by default listens on port 80, the default HTTP port but privileged (only root), change to 8080 for regular users
+
 const JAIL_PATH = path.resolve('stash_cache/');
-const MAX_WRITE_BYTES = 1024 * 1024 * 1024;
+const MAX_WRITE_BYTES = 5 * 1024 * 1024 * 1024;
+const CLEAN_INTERVAL_MINUTES = 360;
 const DEFAULT_HOST = '127.0.0.1';
-const DEFAULT_PORT = 8080;
+const DEFAULT_PORT = 80;
 
 if(JAIL_PATH.startsWith('/stash_cache'))
 {
@@ -41,7 +46,7 @@ catch(err)
 const indexPage = fs.readFileSync('index.html');
 
 const stat = {
-	autoIncrId: 0,
+	randomIds: {},
 	writtenBytes: 0
 };
 
@@ -51,50 +56,33 @@ function sanity_check(p)
 	return real_p && real_p.startsWith(JAIL_PATH) && real_p !== '/';
 }
 
-const cleanup = (function()
+function cleanup()
 {
-	var timer = null;
-	return function cleanup()
+	// delete any files older than some time (6 hours = 360 minutes)
+	console.log('cleanup(): Cleaning up ' + JAIL_PATH);
+	var cp = child_process.spawn('find', [JAIL_PATH, '-type', 'f', '-mmin', '+' + CLEAN_INTERVAL_MINUTES, '-delete']);
+	cp.stdout.on('data', function(chunk){console.log(chunk.toString('utf8'));}); // consume
+	cp.stderr.on('data', function(chunk){console.error(chunk.toString('utf8'));}); // consume
+	cp.on('error', function(err)
 	{
-		return new Promise(function(resolve)
-		{
-			if(timer !== null)
-			{
-				clearTimeout(timer);
-				timer = null;
-			}
-			
-			// delete any files older than some time (6 hours = 360 minutes)
-			console.log('cleanup(): Cleaning up ' + JAIL_PATH);
-			var cp = child_process.spawn('find', [JAIL_PATH, '-type', 'f', '-mmin', '+10', '-delete']);
-			cp.stdout.on('data', function(chunk){console.log(chunk.toString('utf8'));}); // consume
-			cp.stderr.on('data', function(chunk){console.error(chunk.toString('utf8'));}); // consume
-			cp.on('error', function(err)
-			{
-				console.error(err);
-			});
-			cp.on('close', function()
-			{
-				console.log('cleanup(): Clean-up completed.');
-				
-				if(timer === null)
-				{
-					// every so often, we check again to cleanup
-					timer = setTimeout(cleanup, 15 * 60 * 1000);
-				}
-				
-				resolve();
-			});
-		});
-	};
-})();
+		console.error(err);
+	});
+	cp.on('close', function()
+	{
+		console.log('cleanup(): Clean-up completed for ' + stat.writtenBytes + ' bytes.');
+		
+		stat.writtenBytes = 0;
+		
+		setTimeout(cleanup, CLEAN_INTERVAL_MINUTES * 60000);
+	});
+}
 
 function stream_write(chunk, encoding, cb)
 {
 	if(chunk.length + stat.writtenBytes > MAX_WRITE_BYTES)
 	{
-		console.error('MAX_WRITE_BYTES reached');
-		return cb(new Error('No space left on device.'));
+		console.error('MAX_WRITE_BYTES (' + MAX_WRITE_BYTES + ') reached, cleanup is every ' + CLEAN_INTERVAL_MINUTES + ' minutes');
+		return cb(new Error('No space left on device. Wait for cleanup.'));
 	}
 	stat.writtenBytes += chunk.length;
 	cb(null, chunk);
@@ -145,8 +133,20 @@ async function createWriteStream(real_path)
 
 function req_pipe(req, real_path)
 {
-	return new Promise((resolve, reject) =>
+	return new Promise((resolveOnce, rejectOnce) =>
 	{
+		var resolve = function()
+		{
+			resolve = function(){};
+			resolveOnce();
+		};
+		var reject = function()
+		{
+			reject = function(){};
+			rejectOnce();
+		};
+		
+		
 		var contentType = req.headers['content-type'] || '';
 		if(contentType.startsWith('multipart/form-data'))
 		{
@@ -165,7 +165,7 @@ function req_pipe(req, real_path)
 				{
 					hasData = true;
 					createWriteStream(real_path).catch(reject).then(fh => {
-						fh.on('error', reject).on('finish', resolve).end(value);
+						new stream.Transform({transform: stream_write}).pipe(fh.on('error', reject)).on('error', reject).on('finish', resolve).end(value);
 					});
 				}
 			});
@@ -177,7 +177,7 @@ function req_pipe(req, real_path)
 					hasData = true;
 					createWriteStream(real_path).catch(reject).then(fh =>
 					{
-						file.pipe(fh.on('error', reject)).on('error', reject).on('finish', resolve);
+						file.pipe(new stream.Transform({transform: stream_write}).on('error', reject)).pipe(fh.on('error', reject)).on('error', reject).on('finish', resolve);
 					});
 				}
 			});
@@ -197,9 +197,40 @@ function req_pipe(req, real_path)
 		{
 			createWriteStream(real_path).catch(reject).then(fh =>
 			{
-				req.pipe(new stream.Transform({transform: stream_write}).on('error', reject)).pipe(fh).on('error', reject).on('finish', resolve);
+				req.pipe(new stream.Transform({transform: stream_write}).on('error', reject)).pipe(fh.on('error', reject)).on('error', reject).on('finish', resolve);
 			});
 		}
+	});
+}
+
+function generate_random_id()
+{
+	return new Promise(function(resolve, reject)
+	{
+		crypto.randomBytes(32, function(err, buf)
+		{
+			if(err) return reject(err);
+			
+			var urlSafeEncodedRandomId = buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+			
+			// now use a small version of this, until we find one that does not exist yet
+			var i = 6, id;
+			while(i < urlSafeEncodedRandomId.length)
+			{
+				if((id = urlSafeEncodedRandomId.substring(0, i)) in stat.randomIds)
+				{
+					++i;
+				}
+				else
+				{
+					break;
+				}
+			}
+			
+			stat.randomIds[id] = true;
+			
+			resolve(id);
+		});
 	});
 }
 
@@ -207,38 +238,41 @@ function stash_servlet(req, res, next)
 {
 	if(!res || res.headersSent) return next();
 	
-	if(req.url === '/' || req.url === '')
+	var url_path = req.url.replace(/[?].*$/g, '');
+	
+	if(url_path === '/' || url_path === '')
 	{
-		crypto.randomBytes(16, function(err, buf)
+		console.log('stash homepage');
+		
+		generate_random_id().catch(function(err)
 		{
-			if(err)
-			{
-				buf = Buffer.from(new Uint8Array(16));
-			}
-			
-			var rbuf = Buffer.concat([Buffer.from(new Uint32Array(++stat.autoIncrId).buffer), buf]);
-			
+			console.error(err);
+			res.status(500).end('error: Internal error.\n');
+			next();
+		}).then(function(randomId)
+		{
 			res.set('Content-Type', 'text/html; charset=UTF-8').status(200).end(indexPage.toString().replace(/[$]__RANDOM_PATH/g, function()
 			{
-				return rbuf.toString('hex') +'';
+				return randomId;
 			}).replace(/[$]__SERVER_PATH/g, function()
 			{
 				return path.join((req.headers['x-forwarded-original-path'] || ''), (req.originalUrl + ''));
 			}));
+			
 			next();
 		});
 	}
 	else if(req.method === 'POST' || req.method === 'PUT')
 	{
 		// upload file
-		var real_path = path.resolve(path.join(JAIL_PATH, req.url));
-		console.log('stash request: ' + real_path);
+		var real_path = path.resolve(path.join(JAIL_PATH, url_path));
+		console.log('stash post: ' + real_path);
 		
 		// check jail
 		if(!sanity_check(real_path))
 		{
-			console.error('Jailbreak attempt for: ' + req.url);
-			res.status(400).end('error: Jailbreak for path: ' + req.url + '\n');
+			console.error('Jailbreak attempt for: ' + url_path);
+			res.status(400).end('error: Jailbreak for path: ' + url_path + '\n');
 			return next();
 		}
 		
@@ -248,10 +282,18 @@ function stash_servlet(req, res, next)
 			res.status(500).end('error: Internal write error.\n');
 		}).then(() =>
 		{
-			console.log('resolved');
 			if(res && !res.headersSent)
 			{
-				res.status(200).end('ok\n');
+				// if ?redirect=yes
+				if(req.query.redirect)
+				{
+					// use temporary redirect (302 Found)
+					res.redirect(302, './' + req.url.replace(/[?].*$/g, '').replace(/^.*[/]/g, ''));
+				}
+				else
+				{
+					res.status(200).end('ok\n');
+				}
 			}
 			next();
 		});
