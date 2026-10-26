@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stash · encrypted</title>
+<style>
+	:root
+	{
+		--bg: #f5f5f5;
+		--surface: #ffffff;
+		--text: #1c1c1c;
+		--muted: #6f6f6f;
+		--border: #d9d9d9;
+		--accent: #3b3b3b;
+		--accent-strong: #111111;
+		--accent-soft: #ececec;
+		--on-accent: #ffffff;
+		--danger: #c62828;
+		--ok: #2e7d32;
+		--radius: 14px;
+	}
+	@media (prefers-color-scheme: dark)
+	{
+		:root
+		{
+			--bg: #121212;
+			--surface: #1e1e1e;
+			--text: #e8e8e8;
+			--muted: #9a9a9a;
+			--border: #333333;
+			--accent: #cccccc;
+			--accent-strong: #ffffff;
+			--accent-soft: #2a2a2a;
+			--on-accent: #111111;
+			--danger: #ef5350;
+			--ok: #81c784;
+		}
+	}
+	*
+	{box-sizing: border-box;}
+	body
+	{
+		margin: 0;
+		font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+		background: var(--bg);
+		color: var(--text);
+		display: flex;
+		justify-content: center;
+		padding: 24px 16px;
+		-webkit-text-size-adjust: 100%;
+	}
+	main
+	{
+		width: 100%;
+		max-width: 1200px;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		padding: 28px;
+		text-align: center;
+	}
+	h1
+	{margin: 0 0 6px;font-size: 1.4rem;}
+	#status
+	{margin: 6px 0 0;color: var(--muted);min-height: 1.4em;}
+	#status.ok
+	{color: var(--ok);}
+	#status.err
+	{color: var(--danger);}
+	#meta
+	{margin: 8px 0 4px;color: var(--muted);font-size: .9rem;word-break: break-all;}
+	button
+	{
+		margin-top: 18px;
+		padding: 12px 22px;
+		border: none;
+		border-radius: 10px;
+		background: var(--accent);
+		color: var(--on-accent);
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	button:disabled
+	{opacity: .55;cursor: default;}
+	button.secondary
+	{
+		background: transparent;
+		color: var(--text);
+		border: 1px solid var(--border);
+		margin-left: 10px;
+	}
+	#preview-text
+	{
+		width: 100%;
+		height: 260px;
+		margin-top: 16px;
+		padding: 12px;
+		box-sizing: border-box;
+		font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		background: var(--bg);
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: 8px;
+		resize: vertical;
+		text-align: left;
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
+	}
+	#preview-img
+	{
+		max-width: 100%;
+		max-height: 320px;
+		margin-top: 16px;
+		border-radius: 8px;
+		object-fit: contain;
+		background: var(--bg);
+	}
+	.buttons
+	{margin-top: 6px;text-align: center;}
+</style>
+</head>
+<body>
+<main>
+	<h1>stash</h1>
+	<p id="status">Decrypting…</p>
+	<p id="meta"></p>
+	<textarea id="preview-text" readonly hidden></textarea>
+	<img id="preview-img" alt="decrypted image" hidden>
+	<div class="buttons">
+		<button id="download" disabled>Download</button>
+		<button id="back" class="secondary" hidden>Back to stash</button>
+	</div>
+</main>
+<script>
+(function()
+{
+	"use strict";
+
+	var status = document.getElementById('status');
+	var meta = document.getElementById('meta');
+	var dl = document.getElementById('download');
+	var back = document.getElementById('back');
+	var previewText = document.getElementById('preview-text');
+	var previewImg = document.getElementById('preview-img');
+
+	// back to the main stash app (one directory up from /encrypted/)
+	back.onclick = function()
+	{
+		location.href = new URL('../', window.location.href).href;
+	};
+
+	function fail(msg)
+	{
+		status.textContent = msg || 'Could not decrypt.';
+		status.className = 'err';
+		meta.textContent = '';
+		dl.disabled = true;
+		previewText.hidden = true;
+		previewImg.hidden = true;
+	}
+
+	function fromBase64Url(s)
+	{
+		s = s.replace(/-/g, '+').replace(/_/g, '/');
+		while(s.length % 4) s += '=';
+		var bin = atob(s);
+		var out = new Uint8Array(bin.length);
+		for(var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+		return out;
+	}
+
+	// the encrypted filename lives in the url path (/encrypted/<name>)
+	// and the secret key in the fragment (#<secret>), which the server
+	// never sees.
+	var encName = decodeURIComponent((location.pathname.match(/\/encrypted\/([^/]+)$/) || [])[1] || '');
+	var secret = location.hash.replace(/^#/, '');
+
+	if(!encName || !secret)
+	{
+		fail('Missing encrypted file name or secret key.');
+		return;
+	}
+	if(!window.isSecureContext || !crypto.subtle || !crypto.subtle.decrypt)
+	{
+		fail('Decryption needs a secure context (HTTPS or localhost).');
+		return;
+	}
+
+	// data is stored at <SERVER_PATH>/<encName> (without the /encrypted/
+	// part). resolve one directory up from the current page.
+	var dataUrl = new URL('../' + encName, window.location.href).href;
+
+	var keyPromise = crypto.subtle.importKey('raw', fromBase64Url(secret), {name: 'AES-GCM'}, true, ['decrypt']);
+
+	function decryptName(key)
+	{
+		var combined = fromBase64Url(encName);
+		var iv = combined.slice(0, 12);
+		var ct = combined.slice(12);
+		return crypto.subtle.decrypt({name: 'AES-GCM', iv: iv}, key, ct).then(function(nameBytes)
+		{
+			return new TextDecoder().decode(nameBytes);
+		});
+	}
+
+	function fetchAndDecrypt(key, filename)
+	{
+		return fetch(dataUrl).then(function(res)
+		{
+			if(!res.ok) throw new Error('Could not fetch data (HTTP ' + res.status + ').');
+			return res.arrayBuffer();
+		}).then(function(buf)
+		{
+			var combined = new Uint8Array(buf);
+			var iv = combined.slice(0, 12);
+			var ct = combined.slice(12);
+			return crypto.subtle.decrypt({name: 'AES-GCM', iv: iv}, key, ct).then(function(plain)
+			{
+				return {filename: filename, data: plain};
+			});
+		});
+	}
+
+	keyPromise.then(decryptName).then(function(filename)
+	{
+		return keyPromise.then(function(key)
+		{
+			return fetchAndDecrypt(key, filename);
+		});
+	}).then(function(result)
+	{
+		var blob = new Blob([result.data]);
+		var url = URL.createObjectURL(blob);
+		var filename = result.filename || 'download';
+		var bytes = result.data.byteLength;
+
+		dl.onclick = function()
+		{
+			var a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+		};
+		dl.disabled = false;
+		back.hidden = false;
+
+		var kind = detectKind(filename, result.data);
+		if(kind === 'image')
+		{
+			// show the image inline, do not auto-download
+			previewImg.src = url;
+			previewImg.hidden = false;
+			status.textContent = 'Decrypted image';
+			status.className = 'ok';
+		}
+		else if(kind === 'text' && bytes < 4 * 1024 * 1024)
+		{
+			// show the text in a textarea preview, do not auto-download
+			previewText.value = new TextDecoder().decode(result.data);
+			previewText.hidden = false;
+			status.textContent = 'Decrypted text';
+			status.className = 'ok';
+		}
+		else
+		{
+			// not text/image (or too large): auto-download as before
+			status.textContent = 'Ready to download';
+			status.className = 'ok';
+			dl.click();
+		}
+		meta.textContent = filename + ' · ' + formatSize(bytes);
+	}).catch(function(err)
+	{
+		fail(err && err.message ? err.message : 'Could not decrypt.');
+	});
+
+	// guess the kind from the filename extension (falling back to magic
+	// bytes for the image types)
+	function detectKind(filename, data)
+	{
+		var ext = (filename.split('.').pop() || '').toLowerCase();
+		var textExts = {
+			txt: 1, md: 1, json: 1, csv: 1, log: 1, html: 1, htm: 1, xml: 1,
+			yml: 1, yaml: 1, ini: 1, conf: 1, cfg: 1, sh: 1, py: 1, js: 1, mjs: 1,
+			ts: 1, css: 1, sql: 1, toml: 1, env: 1, gitignore: 1, markdown: 1,
+			text: 1
+		};
+		var imgExts = {
+			png: 1, jpg: 1, jpeg: 1, gif: 1, webp: 1, bmp: 1, svg: 1, avif: 1, ico: 1
+		};
+		if(ext in imgExts) return 'image';
+		if(ext in textExts) return 'text';
+		// sniff image magic bytes
+		var d = new Uint8Array(data);
+		if(d.length > 3)
+		{
+			if(d[0] === 0x89 && d[1] === 0x50 && d[2] === 0x4e && d[3] === 0x47) return 'image'; // png
+			if(d[0] === 0xff && d[1] === 0xd8 && d[2] === 0xff) return 'image'; // jpg
+			if(d[0] === 0x47 && d[1] === 0x49 && d[2] === 0x46) return 'image'; // gif
+			if(d[0] === 0x52 && d[1] === 0x49 && d[2] === 0x46 && d[3] === 0x46) return 'image'; // webp/riFF
+			if(d[0] === 0x42 && d[1] === 0x4d) return 'image'; // bmp
+		}
+		return 'other';
+	}
+
+	function formatSize(bytes)
+	{
+		if(!isFinite(bytes) || bytes < 0) return '';
+		var units = [['KiB', 1024], ['MiB', 1024 * 1024], ['GiB', 1024 ** 3], ['TiB', 1024 ** 4]];
+		if(bytes < 1024) return bytes + ' B';
+		for(var i = 0; i < units.length; i++)
+		{
+			if(bytes < units[i][1] * 1024) return (bytes / units[i][1]).toFixed(1) + ' ' + units[i][0];
+		}
+		return (bytes / units[units.length - 1][1]).toFixed(1) + ' ' + units[units.length - 1][0];
+	}
+})();
+</script>
+</body>
+</html>

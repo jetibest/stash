@@ -1,65 +1,1472 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-	<title>Stash</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>stash</title>
+<style>
+:root
+{
+	--bg: #f5f5f5;
+	--surface: #ffffff;
+	--text: #1c1c1c;
+	--muted: #6f6f6f;
+	--border: #d9d9d9;
+	--accent: #3b3b3b;
+	--accent-strong: #111111;
+	--accent-soft: #ececec;
+	--on-accent: #ffffff;
+	--danger: #c62828;
+	--ok: #2e7d32;
+	--radius: 14px;
+}
+@media (prefers-color-scheme: dark)
+{
+	:root
+	{
+		--bg: #121212;
+		--surface: #1e1e1e;
+		--text: #e8e8e8;
+		--muted: #9a9a9a;
+		--border: #333333;
+		--accent: #cccccc;
+		--accent-strong: #ffffff;
+		--accent-soft: #2a2a2a;
+		--on-accent: #111111;
+		--danger: #ef5350;
+		--ok: #81c784;
+	}
+}
+*
+{box-sizing: border-box;}
+html,body
+{height: 100%;}
+body
+{
+	margin: 0;
+	font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+	background: var(--bg);
+	color: var(--text);
+	display: flex;
+	justify-content: center;
+	align-items: flex-start;
+	padding: 24px 16px 64px;
+	-webkit-text-size-adjust: 100%;
+}
+.shell
+{width: 100%;max-width: 1200px;}
+h1
+{font-size: 1.6rem;margin: 0 0 4px;}
+.tagline
+{color: var(--muted);margin: 0 0 20px;font-size: .95rem;}
+.panel
+{
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--radius);
+	padding: 16px;
+	box-shadow: 0 2px 10px rgba(0,0,0,.04);
+}
+textarea
+{
+	width: 100%;
+	min-height: 200px;
+	resize: vertical;
+	border: 1px solid var(--border);
+	border-radius: 10px;
+	padding: 12px;
+	font: 15px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	background: var(--surface);
+	color: var(--text);
+	outline: none;
+	display: block;
+}
+textarea:focus
+{border-color: var(--accent);}
+.row
+{display: flex;flex-wrap: wrap;gap: 10px;margin-top: 14px;align-items: center;}
+button
+{
+	font: inherit;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	padding: 10px 16px;
+	border-radius: 10px;
+	cursor: pointer;
+	touch-action: manipulation;
+	-webkit-tap-highlight-color: transparent;
+}
+button:hover
+{border-color: var(--accent);}
+button.primary
+{background: var(--accent);border-color: var(--accent);color: var(--on-accent);font-weight: 600;}
+button.primary:hover
+{background: var(--accent-strong);border-color: var(--accent-strong);}
+button.primary:disabled
+{opacity: .55;cursor: default;}
+button:disabled
+{opacity: .55;cursor: default;}
+#dropHint
+{
+	position: fixed;
+	inset: 12px;
+	border: 3px dashed var(--accent);
+	border-radius: var(--radius);
+	background: var(--accent-soft);
+	display: none;
+	align-items: center;
+	justify-content: center;
+	pointer-events: none;
+	z-index: 100;
+}
+#dropHint.show
+{display: flex;}
+#dropHint span
+{
+	font-size: 1.3rem;
+	font-weight: 700;
+	color: var(--accent-strong);
+	background: var(--surface);
+	padding: 12px 22px;
+	border-radius: 10px;
+	box-shadow: 0 2px 12px rgba(0,0,0,.12);
+}
+#feedback
+{margin-top: 14px;font-size: .9rem;min-height: 1.2em;}
+#feedback.error
+{color: var(--danger);}
+#feedback.success
+{color: var(--accent-strong);}
+#results
+{list-style: none;margin: 0;padding: 0;margin-top: 8px;}
+#results li
+{
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 12px;
+	margin-top: 10px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+	word-break: break-all;
+}
+#results .url
+{flex: 1 1 200px;font-size: .85rem;color: var(--accent-strong);}
+#results .meta
+{font-size: .8rem;color: var(--muted);white-space: nowrap;}
+#results .preview
+{width: 44px;height: 44px;object-fit: cover;border-radius: 8px;flex: 0 0 auto;}
+#results .status
+{font-size: .9rem;white-space: nowrap;font-weight: 600;}
+#results .status.ok
+{color: var(--ok);}
+#results .status.err
+{color: var(--danger);font-weight: 400;white-space: normal;word-break: break-all;}
+.modal
+{
+	position: fixed;
+	inset: 0;
+	background: rgba(0,0,0,.72);
+	z-index: 150;
+	display: flex;
+	flex-direction: column;
+}
+.modal[hidden]
+{display: none;}
+.crop-toolbar
+{
+	display: flex;
+	gap: 10px;
+	padding: 12px;
+	align-items: center;
+	justify-content: center;
+	flex-wrap: wrap;
+	background: rgba(0,0,0,.25);
+}
+.crop-toolbar button
+{color: #fff;background: rgba(255,255,255,.12);border-color: rgba(255,255,255,.3);}
+.crop-toolbar button.primary
+{background: var(--accent);border-color: var(--accent);color: var(--on-accent);}
+.crop-stage
+{
+	flex: 1;
+	position: relative;
+	overflow: hidden;
+	margin: 12px;
+	border-radius: 12px;
+	touch-action: none;
+	background: #111;
+}
+.crop-img-wrap
+{
+	position: absolute;
+	top: 0;
+	left: 0;
+	transform-origin: 0 0;
+	background: repeating-conic-gradient(#222 0 25%, #333 0 50%) 50%/16px 16px;
+}
+#cropImg
+{
+	position: absolute;
+	top: 0;
+	left: 0;
+	transform-origin: 0 0;
+	user-select: none;
+	-webkit-user-select: none;
+	max-width: none;
+	max-height: none;
+	cursor: grab;
+	z-index: 1;
+}
+#cropImg.dragging
+{cursor: grabbing;}
+.crop-zoom
+{color: #fff;font-size: .9rem;min-width: 52px;text-align: center;}
+.crop-box
+{
+	position: absolute;
+	z-index: 3;
+	border: 1px solid rgba(255,255,255,.9);
+	outline: 1px solid rgba(0,0,0,.3);
+	box-shadow: 0 0 0 9999px rgba(0,0,0,.55);
+	cursor: move;
+	touch-action: none;
+	box-sizing: border-box;
+	transition: opacity .15s;
+}
+.crop-box, .crop-box .crop-handle
+{opacity: .45;}
+.crop-box:hover, .crop-box.dragging
+{opacity: 1;}
+.crop-diag
+{
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	z-index: 5;
+}
+.crop-diag line
+{
+	stroke: rgba(255,255,255,.6);
+	stroke-width: 1.5;
+	stroke-dasharray: 4 4;
+}
+.crop-box.snapped .crop-diag line
+{
+	stroke: #7dd3fc;
+	stroke-width: 2;
+	stroke-dasharray: none;
+}
+.crop-orig
+{color: #fff;font-size: .85rem;opacity: .85;white-space: nowrap;}
+.crop-pxinfo
+{
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	z-index: 6;
+	pointer-events: none;
+	background: rgba(0,0,0,.6);
+	color: #fff;
+	font-size: 11px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	padding: 1px 5px;
+	border-radius: 4px;
+	white-space: nowrap;
+	opacity: 0;
+	transition: opacity .15s;
+}
+.crop-box:hover .crop-pxinfo, .crop-box.dragging .crop-pxinfo
+{opacity: 1;}
+.crop-handle
+{
+	position: absolute;
+	width: 16px;
+	height: 16px;
+	background: #fff;
+	border: 1px solid #444;
+	box-sizing: border-box;
+	border-radius: 2px;
+	z-index: 4;
+}
+.crop-handle[data-dir="nw"]{left:-8px;top:-8px;cursor:nwse-resize;}
+.crop-handle[data-dir="n"]{left:50%;top:-8px;margin-left:-8px;cursor:ns-resize;}
+.crop-handle[data-dir="ne"]{right:-8px;top:-8px;cursor:nesw-resize;}
+.crop-handle[data-dir="e"]{right:-8px;top:50%;margin-top:-8px;cursor:ew-resize;}
+.crop-handle[data-dir="se"]{right:-8px;bottom:-8px;cursor:nwse-resize;}
+.crop-handle[data-dir="s"]{left:50%;bottom:-8px;margin-left:-8px;cursor:ns-resize;}
+.crop-handle[data-dir="sw"]{left:-8px;bottom:-8px;cursor:nesw-resize;}
+.crop-handle[data-dir="w"]{left:-8px;top:50%;margin-top:-8px;cursor:ew-resize;}
+.cheatsheet
+{margin-top: 28px;}
+.cheatsheet h2
+{font-size: 1.1rem;margin: 0 0 4px;}
+.cheatsheet .hint
+{color: var(--muted);font-size: .85rem;margin: 0 0 12px;}
+.cheatsheet .hint code
+{font-size: .8em;background: var(--accent-soft);padding: 1px 4px;border-radius: 4px;}
+.cs-grid
+{
+	display: grid;
+	grid-template-columns: repeat(2, 1fr);
+	gap: 20px;
+}
+.cs-col h3
+{font-size: .9rem;margin: 0 0 6px;color: var(--text);}
+.cmd
+{
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 10px 12px;
+	margin-top: 8px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+.cmd .lbl
+{flex: 1 1 100%;font-size: .8rem;color: var(--muted);}
+.cmd code
+{
+	flex: 1 1 320px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: .82rem;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	padding: 6px 10px;
+	white-space: pre-wrap;
+	word-break: break-all;
+	user-select: all;
+}
+.cmd button
+{padding: 8px 14px;margin-top: 0;flex: 0 0 auto;}
+</style>
 </head>
 <body>
-<style>
-html,body
-{width: 100%;height: 100%;box-sizing: border-box;margin: 0;}
-body
-{display: flex;flex-direction: column;background-color: #f9f9f9;}
-form.textupload
-{flex-grow: 1;display: flex;flex-direction: column;margin: 20px;}
-form.textupload textarea
-{flex-grow: 1;}
-form.textupload button
-{margin-top: 20px;}
-textarea
-{display: block;box-sizing: border-box;width: 100%;border: none;resize: none;outline: none;background-color: #fff;box-shadow: 3px 3px 15px 0px rgba(0,0,0,0.1);font-size: 14px;line-height: 1.2;border: 1px solid #eee;}
-textarea:focus
-{border-color: #39f;}
-button
-{height: 60px;background-color: #393;color: #fff;font-size: 20px;border: none;box-shadow: 3px 3px 15px 0px rgba(0,0,0,0.1);cursor: pointer;outline: none;}
-button:hover
-{background-color: #6c6;}
-button:focus
-{text-decoration: underline;background-color: #060;}
-</style>
-	<form method="POST" action="$__SERVER_PATH$__RANDOM_PATH.txt?redirect=yes" enctype="multipart/form-data" class="textupload">
-		<textarea name="data"></textarea>
-		<button type="submit">
-			Stash
-		</button>
-	</form>
-	<aside>
-		<form method="POST" action="$__SERVER_PATH$__RANDOM_PATH?redirect=yes" enctype="multipart/form-data" class="fileupload">
-			<input type="file" name="data" onchange="this.parentNode.action='$__SERVER_PATH$__RANDOM_PATH/' + this.files[0].name + '?redirect=yes';">
-			<button type="submit">
-				Stash
-			</button>
-		</form>
-	</aside>
+
+<main class="shell">
+	<h1>stash</h1>
+	<p class="tagline">Paste, drop or pick a file. Text goes in the box, images get cropped.</p>
+
+	<div class="panel">
+		<textarea id="text" placeholder="Write something here, or paste text with Ctrl/Cmd+V" autofocus></textarea>
+		<div class="row">
+			<button id="btnStashText" class="primary">Stash text</button>
+			<button id="btnDownload" disabled>Download to Stash</button>
+			<button id="btnPickFile">Upload file</button>
+			<button id="btnPaste">Paste</button>
+			<input type="file" id="fileInput" multiple hidden>
+		</div>
+	</div>
+
+	<div id="feedback"></div>
+	<ul id="results"></ul>
+
+	<section class="cheatsheet">
+		<h2>CLI cheatsheet</h2>
+		<p class="hint">Run these from a terminal. <code>BASE</code> is filled in with this page's URL. <code>$FILE</code> and <code>$PASS</code> use your shell environment variables.</p>
+		<div class="cs-grid">
+			<div class="cs-col">
+				<h3>Upload</h3>
+				<div class="cmd"><span class="lbl">File (multipart)</span><code data-cmd></code><button data-copy>Copy</button></div>
+				<div class="cmd"><span class="lbl">Raw bytes from stdin</span><code data-cmd></code><button data-copy>Copy</button></div>
+			</div>
+			<div class="cs-col">
+				<h3>Download</h3>
+				<div class="cmd"><span class="lbl">Save with its name</span><code data-cmd></code><button data-copy>Copy</button></div>
+				<div class="cmd"><span class="lbl">To stdout</span><code data-cmd></code><button data-copy>Copy</button></div>
+			</div>
+			<div class="cs-col">
+				<h3>Upload · encrypted</h3>
+				<div class="cmd"><span class="lbl">Encrypt then upload (openssl)</span><code data-cmd></code><button data-copy>Copy</button></div>
+			</div>
+			<div class="cs-col">
+				<h3>Download · decrypted</h3>
+				<div class="cmd"><span class="lbl">Download then decrypt</span><code data-cmd></code><button data-copy>Copy</button></div>
+			</div>
+		</div>
+	</section>
+</main>
+
+<div id="dropHint"><span>Drop to stash</span></div>
+
+<div id="cropModal" class="modal" hidden>
+	<div class="crop-toolbar">
+		<button id="cropCancel">Cancel</button>
+		<span id="cropOrigSize" class="crop-orig">0 × 0</span>
+		<button id="cropZoomOut" title="Zoom out">−</button>
+		<span id="cropZoomPct" class="crop-zoom">100%</span>
+		<button id="cropZoomIn" title="Zoom in">+</button>
+		<button id="cropConfirm" class="primary">Crop &amp; upload</button>
+	</div>
+	<div class="crop-stage" id="cropStage">
+		<div class="crop-img-wrap" id="cropImgWrap"><img id="cropImg" alt="image" draggable="false"></div>
+		<div class="crop-box" id="cropBox">
+			<div class="crop-pxinfo" id="cropPxInfo"></div>
+			<svg class="crop-diag" width="100%" height="100%"><line id="cropDiagLine" /></svg>
+			<div class="crop-handle" data-dir="nw"></div>
+			<div class="crop-handle" data-dir="n"></div>
+			<div class="crop-handle" data-dir="ne"></div>
+			<div class="crop-handle" data-dir="e"></div>
+			<div class="crop-handle" data-dir="se"></div>
+			<div class="crop-handle" data-dir="s"></div>
+			<div class="crop-handle" data-dir="sw"></div>
+			<div class="crop-handle" data-dir="w"></div>
+		</div>
+	</div>
+</div>
+
 <script>
-document.querySelector('aside').style.display = 'none'; // if no javascript, fallback to showing file input
-document.body.ondragover = function(e)
+(function()
 {
-	e.preventDefault() 
-}
-document.body.ondrop = function(e)
-{
-	if(e.dataTransfer && e.dataTransfer.files)
+	"use strict";
+
+	var SERVER_PATH = '$__SERVER_PATH';
+
+	// the app root, derived from the browser's own url. behind a reverse
+	// proxy the server-injected SERVER_PATH can be wrong (it relies on the
+	// x-forwarded-original-path header, which not every proxy sends), so we
+	// compute the base from window.location which the browser always knows.
+	var BASE_PATH = (function()
+	{
+		var p = window.location.pathname;
+		if(p.slice(-1) !== '/') p += '/';
+		return p;
+	})();
+
+	// generate a fresh random stash id on the client for each upload,
+	// so repeated uploads never reuse the same url
+	function newRandomId()
+	{
+		var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+		var arr = new Uint8Array(12);
+		if(window.crypto && crypto.getRandomValues) crypto.getRandomValues(arr);
+		else for(var i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * 256);
+		var id = '';
+		for(var i = 0; i < arr.length; i++) id += chars[arr[i] % 64];
+		return id;
+	}
+
+	// compute the absolute url by merging a server-relative path with the
+	// current window.location scheme+host+pathname (works behind a proxy
+	// since we start from the browser's own location).
+	function absoluteUrl(path)
+	{
+		return new URL(path, window.location.href).href;
+	}
+
+	var textEl = document.getElementById('text');
+	var btnText = document.getElementById('btnStashText');
+	var btnDownload = document.getElementById('btnDownload');
+	var btnPick = document.getElementById('btnPickFile');
+	var btnPaste = document.getElementById('btnPaste');
+	var fileInput = document.getElementById('fileInput');
+	var feedbackEl = document.getElementById('feedback');
+	var resultsEl = document.getElementById('results');
+	var dropHint = document.getElementById('dropHint');
+	var cropModal = document.getElementById('cropModal');
+	var cropStage = document.getElementById('cropStage');
+	var cropImg = document.getElementById('cropImg');
+
+	var uploadQueue = [];
+
+	function formatSize(bytes)
+	{
+		if(!isFinite(bytes) || bytes < 0) return '';
+		var units = [['KiB', 1024], ['MiB', 1024 * 1024], ['GiB', 1024 ** 3], ['TiB', 1024 ** 4]];
+		if(bytes < 1024) return bytes + ' B';
+		for(var i = 0; i < units.length; i++)
+		{
+			if(bytes < units[i][1] * 1024)
+			{
+				return (bytes / units[i][1]).toFixed(1) + ' ' + units[i][0];
+			}
+		}
+		return (bytes / units[units.length - 1][1]).toFixed(1) + ' ' + units[units.length - 1][0];
+	}
+
+	function setFeedback(msg, kind)
+	{
+		feedbackEl.textContent = msg || '';
+		feedbackEl.className = kind || '';
+	}
+
+	function sanitizeName(name)
+	{
+		var base = String(name || 'file').replace(/[\\/]/g, '_').replace(/^\.+/, '');
+		return base || 'file';
+	}
+
+	// ---- end-to-end encryption helpers ----
+	// everything uploaded by javascript (except the server-side download
+	// feature) is encrypted in the browser with a fresh AES-GCM key. the
+	// key (the "#secret") never leaves the client; the server only ever
+	// stores ciphertext and the encrypted filename, so it cannot read the
+	// contents. the key travels to the recipient inside the url fragment,
+	// which is never sent to the server.
+	function toBase64Url(bytes)
+	{
+		var bin = '';
+		for(var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+		return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+	}
+	function fromBase64Url(s)
+	{
+		s = s.replace(/-/g, '+').replace(/_/g, '/');
+		while(s.length % 4) s += '=';
+		var bin = atob(s);
+		var out = new Uint8Array(bin.length);
+		for(var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+		return out;
+	}
+	async function encryptBytes(key, data)
+	{
+		// prefix the 12-byte gcm iv so decryption needs no extra state
+		var iv = crypto.getRandomValues(new Uint8Array(12));
+		var ct = await crypto.subtle.encrypt({name: 'AES-GCM', iv: iv}, key, data);
+		var out = new Uint8Array(iv.length + ct.byteLength);
+		out.set(iv);
+		out.set(new Uint8Array(ct), iv.length);
+		return out;
+	}
+	function encryptionAvailable()
+	{
+		return window.isSecureContext && crypto.subtle && crypto.subtle.encrypt;
+	}
+	// generate a fresh key, encrypt a file's bytes and its name, and return
+	// everything needed to place the stash url.
+	async function encryptFile(file)
+	{
+		var key = await crypto.subtle.generateKey({name: 'AES-GCM', length: 256}, true, ['encrypt']);
+		var raw = await crypto.subtle.exportKey('raw', key);
+		var secret = toBase64Url(new Uint8Array(raw));
+		var data = await file.arrayBuffer();
+		var encData = await encryptBytes(key, data);
+		var encName = toBase64Url(await encryptBytes(key, new TextEncoder().encode(sanitizeName(file.name))));
+		return {secret: secret, encName: encName, encData: encData, size: file.size};
+	}
+	function stashEncryptedUrl(encName, secret)
+	{
+		return absoluteUrl(BASE_PATH + 'encrypted/' + encName + '#' + secret);
+	}
+	function uploadEncrypted(result, rel, fd, li, status, size)
+	{
+		postForm(rel, fd, function(loaded, total)
+		{
+			if(total) status.textContent = Math.round(loaded / total * 100) + '%';
+		}, function(err)
+		{
+			if(err)
+			{
+				status.className = 'status err';
+				status.textContent = '✕ ' + err.message;
+			}
+			else
+			{
+				setResult(li, result.url, size);
+				status.className = 'status ok';
+				status.textContent = '✓';
+			}
+		});
+	}
+
+	// ---- detect if textarea content is a url, enable download button ----
+	function looksLikeUrl(text)
+	{
+		text = (text || '').trim();
+		if(!text) return false;
+		try
+		{
+			var u = new URL(text);
+			return (u.protocol === 'http:' || u.protocol === 'https:') && u.hostname;
+		}
+		catch(e)
+		{
+			return false;
+		}
+	}
+
+	// return the list of valid http(s) urls in the textarea, one per line
+	function extractUrls(text)
+	{
+		var urls = [];
+		(text || '').split(/\r?\n/).forEach(function(line)
+		{
+			line = line.trim();
+			if(line && looksLikeUrl(line)) urls.push(line);
+		});
+		return urls;
+	}
+
+	textEl.addEventListener('input', function()
+	{
+		btnDownload.disabled = extractUrls(textEl.value).length === 0;
+	});
+
+	// ---- download remote url(s) server-side ----
+	function downloadUrl()
+	{
+		var urls = extractUrls(textEl.value);
+		if(!urls.length)
+		{
+			setFeedback('Not a valid http(s) URL.', 'error');
+			return;
+		}
+		btnDownload.disabled = true;
+		urls.forEach(function(value)
+		{
+			var fd = new FormData();
+			fd.append('download', value);
+			var rel = BASE_PATH + 'download';
+			var li = addResult(null, '', null, true);
+			var status = li.querySelector('.status');
+			status.textContent = '…';
+			postFormRaw(rel, fd, function(err, responseText)
+			{
+				btnDownload.disabled = extractUrls(textEl.value).length === 0;
+				if(err)
+				{
+					status.className = 'status err';
+					status.textContent = '✕ ' + err.message;
+					return;
+				}
+				// server returns "ok <stash-url> <bytes>"
+				var m = /^ok\s+(\S+)\s+([0-9]+)$/i.exec((responseText || '').trim());
+				if(m)
+				{
+					setResult(li, absoluteUrl(m[1]), parseInt(m[2], 10));
+				}
+				status.className = 'status ok';
+				status.textContent = '✓';
+			});
+		});
+	}
+
+	// ---- text upload (encrypted) ----
+	function stashText()
+	{
+		var value = textEl.value;
+		if(!value)
+		{
+			setFeedback('Nothing to stash. Type something first.', 'error');
+			return;
+		}
+		if(!encryptionAvailable())
+		{
+			setFeedback('Encryption unavailable (needs a secure context).', 'error');
+			return;
+		}
+		btnText.disabled = true;
+		var size = value.length;
+		var li = addResult(null, '', size, true);
+		var status = li.querySelector('.status');
+		status.textContent = '…';
+		encryptFile(new File([new TextEncoder().encode(value)], newRandomId() + '.txt')).then(function(r)
+		{
+			var fd = new FormData();
+			fd.append('file', new Blob([r.encData]), r.encName);
+			uploadEncrypted({url: stashEncryptedUrl(r.encName, r.secret)}, BASE_PATH + r.encName, fd, li, status, r.size);
+		}).catch(function(err)
+		{
+			status.className = 'status err';
+			status.textContent = '✕ ' + (err && err.message ? err.message : 'Encryption failed.');
+		}).finally(function()
+		{
+			btnText.disabled = false;
+		});
+	}
+
+	// ---- file upload (encrypted, with progress) ----
+	function stashFile(file)
+	{
+		if(!encryptionAvailable())
+		{
+			setFeedback('Encryption unavailable (needs a secure context).', 'error');
+			return;
+		}
+		var li = addResult(file.type.indexOf('image/') === 0 ? file : null, '', file.size, true);
+		var status = li.querySelector('.status');
+		status.textContent = '…';
+		encryptFile(file).then(function(r)
+		{
+			var fd = new FormData();
+			fd.append('file', new Blob([r.encData]), r.encName);
+			uploadEncrypted({url: stashEncryptedUrl(r.encName, r.secret)}, BASE_PATH + r.encName, fd, li, status, r.size);
+		}).catch(function(err)
+		{
+			status.className = 'status err';
+			status.textContent = '✕ ' + (err && err.message ? err.message : 'Encryption failed.');
+		});
+	}
+
+	function postForm(url, fd, onProgress, cb)
+	{
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', url, true);
+		if(onProgress && 'upload' in xhr)
+		{
+			xhr.upload.onprogress = function(e)
+			{
+				if(e.lengthComputable) onProgress(e.loaded, e.total);
+			};
+		}
+		xhr.onload = function()
+		{
+			if(xhr.status >= 200 && xhr.status < 300)
+			{
+				cb(null);
+			}
+			else
+			{
+				cb(new Error((xhr.responseText || ('HTTP ' + xhr.status)).trim()));
+			}
+		};
+		xhr.onerror = function()
+		{
+			cb(new Error('Network error.'));
+		};
+		xhr.send(fd);
+	}
+
+	// like postForm, but passes the raw response body through
+	function postFormRaw(url, fd, cb)
+	{
+		var xhr = new XMLHttpRequest();
+		xhr.open('POST', url, true);
+		xhr.onload = function()
+		{
+			if(xhr.status >= 200 && xhr.status < 300)
+			{
+				cb(null, xhr.responseText);
+			}
+			else
+			{
+				cb(new Error((xhr.responseText || ('HTTP ' + xhr.status)).trim()));
+			}
+		};
+		xhr.onerror = function()
+		{
+			cb(new Error('Network error.'));
+		};
+		xhr.send(fd);
+	}
+
+	// ---- result row ----
+	function addResult(thumbFile, url, bytes, withStatus)
+	{
+		var li = document.createElement('li');
+		if(thumbFile && thumbFile.type.indexOf('image/') === 0)
+		{
+			var img = document.createElement('img');
+			img.className = 'preview';
+			img.src = URL.createObjectURL(thumbFile);
+			li.appendChild(img);
+		}
+		var urlSpan = document.createElement('a');
+		urlSpan.className = 'url';
+		urlSpan.href = url;
+		urlSpan.textContent = url;
+		li.appendChild(urlSpan);
+
+		var meta = document.createElement('span');
+		meta.className = 'meta';
+		meta.textContent = bytes == null ? '' : formatSize(bytes);
+		li.appendChild(meta);
+
+		if(withStatus)
+		{
+			var status = document.createElement('span');
+			status.className = 'status';
+			li.appendChild(status);
+		}
+
+		var copy = document.createElement('button');
+		copy.textContent = 'Copy';
+		copy.addEventListener('click', function()
+		{
+			copyUrl(urlSpan.textContent, copy);
+		});
+		li.appendChild(copy);
+
+		resultsEl.appendChild(li);
+		return li;
+	}
+
+	// set the real url and byte size of an existing result row
+	function setResult(li, url, bytes)
+	{
+		var link = li.querySelector('a.url');
+		if(link && url)
+		{
+			link.href = url;
+			link.textContent = url;
+		}
+		var meta = li.querySelector('.meta');
+		if(meta && bytes != null)
+		{
+			meta.textContent = formatSize(bytes);
+		}
+	}
+
+	function copyUrl(url, btn)
+	{
+		var done = function()
+		{
+			var old = btn.textContent;
+			btn.textContent = 'Copied ✓';
+			btn.disabled = true;
+			setTimeout(function()
+			{
+				btn.textContent = old;
+				btn.disabled = false;
+			}, 1500);
+		};
+		if(navigator.clipboard && navigator.clipboard.writeText)
+		{
+			navigator.clipboard.writeText(url).then(done, function()
+			{
+				fallbackCopy(url);
+				done();
+			});
+		}
+		else
+		{
+			fallbackCopy(url);
+			done();
+		}
+	}
+
+	function fallbackCopy(text)
+	{
+		var ta = document.createElement('textarea');
+		ta.value = text;
+		ta.style.position = 'fixed';
+		ta.style.opacity = '0';
+		document.body.appendChild(ta);
+		ta.select();
+		try { document.execCommand('copy'); } catch(e) {}
+		document.body.removeChild(ta);
+	}
+
+	// ---- file picker ----
+	btnPick.addEventListener('click', function()
+	{
+		fileInput.value = '';
+		fileInput.click();
+	});
+	btnPaste.addEventListener('click', pasteFromClipboard);
+	fileInput.addEventListener('change', function()
+	{
+		var files = Array.prototype.slice.call(fileInput.files || []);
+		files.forEach(handleFile);
+		fileInput.value = '';
+	});
+
+	// ---- handle a single file (image -> crop, else upload) ----
+	function handleFile(file)
+	{
+		if(!file) return;
+		if(file.type.indexOf('image/') === 0)
+		{
+			uploadQueue.push(file);
+			if(uploadQueue.length === 1) nextInQueue();
+		}
+		else
+		{
+			stashFile(file);
+		}
+	}
+
+	function nextInQueue()
+	{
+		if(!uploadQueue.length) return;
+		var file = uploadQueue[0];
+		var reader = new FileReader();
+		reader.onload = function()
+		{
+			var img = new Image();
+			img.onload = function()
+			{
+				openCrop(img, file.name);
+			};
+			img.onerror = function()
+			{
+				uploadQueue.shift();
+				setFeedback('Could not read image.', 'error');
+				nextInQueue();
+			};
+			img.src = reader.result;
+		};
+		reader.readAsDataURL(file);
+	}
+
+	// ---- image crop / pan ----
+	var cropBox = document.getElementById('cropBox');
+	var cropImgWrap = document.getElementById('cropImgWrap');
+	var cropZoomPct = document.getElementById('cropZoomPct');
+	var cropPxInfo = document.getElementById('cropPxInfo');
+	var cropOrigSize = document.getElementById('cropOrigSize');
+	var MIN_CROP_PX = 20;
+	var SNAP_IN = 0.04;  // snap when within 4% of the original ratio
+	var SNAP_OUT = 0.12; // release the snap only when beyond 12%
+	var CROP_MARGIN = 22; // reserved on each side so corner handles are not clipped
+
+	var crop = {
+		img: null,
+		name: '',
+		iw: 0,
+		ih: 0,
+		ar: 1,
+		scale: 1,
+		base: 1,
+		ox: 0,
+		oy: 0,
+		rect: {x: 0, y: 0, w: 0, h: 0},
+		vw: 0,
+		vh: 0,
+		snapped: false,
+		diag: null
+	};
+
+	function openCrop(img, name)
+	{
+		crop.img = img;
+		crop.name = name;
+		crop.iw = img.naturalWidth;
+		crop.ih = img.naturalHeight;
+		crop.ar = crop.iw / crop.ih;
+		crop.snapped = false;
+		crop.diag = null;
+		cropModal.hidden = false;
+		cropImg.src = img.src;
+
+		var stageW = cropStage.clientWidth;
+		var stageH = cropStage.clientHeight;
+		crop.vw = Math.max(10, stageW - 2 * CROP_MARGIN);
+		crop.vh = Math.max(10, stageH - 2 * CROP_MARGIN);
+		// show the image at original size (100%) unless it does not fit the
+		// viewport, in which case scale it down to fit. never upscale by default.
+		crop.base = Math.min(1, crop.vw / crop.iw, crop.vh / crop.ih);
+		crop.scale = crop.base;
+		crop.ox = CROP_MARGIN + (crop.vw - crop.iw * crop.scale) / 2;
+		crop.oy = CROP_MARGIN + (crop.vh - crop.ih * crop.scale) / 2;
+		cropOrigSize.textContent = crop.iw + ' × ' + crop.ih + ' px';
+		// default: select the whole image
+		crop.rect = {x: 0, y: 0, w: crop.iw, h: crop.ih};
+		renderCrop();
+	}
+
+	function renderCrop()
+	{
+		var w = crop.iw * crop.scale;
+		var h = crop.ih * crop.scale;
+		cropImgWrap.style.width = w + 'px';
+		cropImgWrap.style.height = h + 'px';
+		cropImgWrap.style.transform = 'translate(' + crop.ox + 'px,' + crop.oy + 'px)';
+		cropImg.style.width = w + 'px';
+		cropImg.style.height = h + 'px';
+		var r = crop.rect;
+		var bw = Math.max(1, r.w * crop.scale);
+		var bh = Math.max(1, r.h * crop.scale);
+		cropBox.style.left = (crop.ox + r.x * crop.scale) + 'px';
+		cropBox.style.top = (crop.oy + r.y * crop.scale) + 'px';
+		cropBox.style.width = bw + 'px';
+		cropBox.style.height = bh + 'px';
+		cropBox.classList.toggle('snapped', crop.snapped);
+		// 100% = original image size; reflect scaling precisely (e.g. a large
+		// image fitted at half size shows 50%).
+		cropZoomPct.textContent = Math.round(crop.scale * 100) + '%';
+		cropPxInfo.textContent = Math.round(r.x) + ',' + Math.round(r.y) + '  ' + Math.round(r.w) + '×' + Math.round(r.h) + ' px';
+		drawDiag(bw, bh);
+	}
+
+	// draw the diagonal guide from the grabbed corner to the opposite one.
+	function drawDiag(w, h)
+	{
+		var line = document.getElementById('cropDiagLine');
+		var d = crop.diag;
+		if(!d || !line) { if(line) line.setAttribute('display', 'none'); return; }
+		var p1 = d[0], p2 = d[1];
+		var x1 = p1[0] === 'w' ? 0 : w;
+		var y1 = p1[1] === 'n' ? 0 : h;
+		var x2 = p2[0] === 'w' ? 0 : w;
+		var y2 = p2[1] === 'n' ? 0 : h;
+		line.setAttribute('display', 'block');
+		line.setAttribute('x1', x1);
+		line.setAttribute('y1', y1);
+		line.setAttribute('x2', x2);
+		line.setAttribute('y2', y2);
+	}
+
+	function clampPan()
+	{
+		var w = crop.iw * crop.scale;
+		var h = crop.ih * crop.scale;
+		var minX = CROP_MARGIN, minY = CROP_MARGIN;
+		var maxX = CROP_MARGIN + crop.vw, maxY = CROP_MARGIN + crop.vh;
+		// clamp so the image always overlaps the viewport; never force-center
+		// (forced centering broke cursor-anchored zooming).
+		crop.ox = Math.min(maxX - w, Math.max(minX, crop.ox));
+		crop.oy = Math.min(maxY - h, Math.max(minY, crop.oy));
+	}
+
+	function setZoom(newScale, cx, cy)
+	{
+		if(cx === undefined) { cx = CROP_MARGIN + crop.vw / 2; cy = CROP_MARGIN + crop.vh / 2; }
+		newScale = Math.max(crop.base, Math.min(crop.base * 12, newScale));
+		if(newScale === crop.scale) return;
+		// keep the point under (cx,cy) fixed
+		var ix = (cx - crop.ox) / crop.scale;
+		var iy = (cy - crop.oy) / crop.scale;
+		crop.scale = newScale;
+		crop.ox = cx - ix * newScale;
+		crop.oy = cy - iy * newScale;
+		clampPan();
+		renderCrop();
+	}
+
+	// resize the crop rect given a direction and the drag delta (in image px).
+	// side handles resize freely. corner handles keep the OPPOSITE corner as a
+	// fixed anchor and only move the grabbed corner; when within the snap range
+	// they lock to the original aspect ratio (with hysteresis so it does not
+	// flicker), driven along the dominant axis of the pointer movement.
+	function resizeRect(dir, s, dxi, dyi)
+	{
+		var minW = MIN_CROP_PX / crop.scale;
+		var minH = MIN_CROP_PX / crop.scale;
+		var isCorner = (dir.indexOf('n') >= 0 || dir.indexOf('s') >= 0) && (dir.indexOf('e') >= 0 || dir.indexOf('w') >= 0);
+
+		if(!isCorner)
+		{
+			// sides: free resize, no snapping
+			var r = {x: s.x, y: s.y, w: s.w, h: s.h};
+			if(dir.indexOf('e') >= 0) r.w = Math.min(r.w + dxi, crop.iw - r.x);
+			if(dir.indexOf('s') >= 0) r.h = Math.min(r.h + dyi, crop.ih - r.y);
+			if(dir.indexOf('w') >= 0) { var nw = Math.min(r.w - dxi, r.x + r.w); r.x = r.x + r.w - nw; r.w = nw; }
+			if(dir.indexOf('n') >= 0) { var nh = Math.min(r.h - dyi, r.y + r.h); r.y = r.y + r.h - nh; r.h = nh; }
+			if(r.w < minW) { if(dir.indexOf('w') >= 0) r.x = r.x + r.w - minW; r.w = minW; }
+			if(r.h < minH) { if(dir.indexOf('n') >= 0) r.y = r.y + r.h - minH; r.h = minH; }
+			if(r.x < 0) r.x = 0;
+			if(r.y < 0) r.y = 0;
+			if(r.x + r.w > crop.iw) r.x = crop.iw - r.w;
+			if(r.y + r.h > crop.ih) r.y = crop.ih - r.h;
+			crop.snapped = false;
+			crop.rect = r;
+			return false;
+		}
+
+		// corner: opposite corner is the fixed anchor
+		var growsRight = dir.indexOf('e') >= 0; // else grows left
+		var growsDown  = dir.indexOf('s') >= 0; // else grows up
+		var anchorX = growsRight ? s.x : s.x + s.w;
+		var anchorY = growsDown  ? s.y : s.y + s.h;
+		var maxW = growsRight ? crop.iw - anchorX : anchorX;
+		var maxH = growsDown  ? crop.ih - anchorY : anchorY;
+
+		// requested free size from the pointer delta
+		var w = s.w + (growsRight ? dxi : -dxi);
+		var h = s.h + (growsDown  ? dyi : -dyi);
+
+		// snap decision (hysteresis)
+		var snapped = false;
+		if(w > 0 && h > 0)
+		{
+			var dev = Math.abs(w / h - crop.ar) / crop.ar;
+			if(crop.snapped)
+			{
+				if(dev > SNAP_OUT) crop.snapped = false;
+				else snapped = true;
+			}
+			else if(dev <= SNAP_IN)
+			{
+				crop.snapped = true;
+				snapped = true;
+			}
+		}
+		else
+		{
+			crop.snapped = false;
+		}
+
+		if(snapped)
+		{
+			// lock to original ratio, driven by the dominant pointer axis
+			var relW = Math.abs(dxi) / (s.w || 1);
+			var relH = Math.abs(dyi) / (s.h || 1);
+			if(relW >= relH)
+			{
+				w = Math.min(Math.max(minW, w), maxW);
+				h = w / crop.ar;
+				if(h > maxH) { h = maxH; w = h * crop.ar; }
+				if(h < minH) { h = minH; w = h * crop.ar; }
+			}
+			else
+			{
+				h = Math.min(Math.max(minH, h), maxH);
+				w = h * crop.ar;
+				if(w > maxW) { w = maxW; h = w / crop.ar; }
+				if(w < minW) { w = minW; h = w / crop.ar; }
+			}
+		}
+		else
+		{
+			// free resize, clamped to the anchor bounds
+			w = Math.min(Math.max(minW, w), maxW);
+			h = Math.min(Math.max(minH, h), maxH);
+		}
+
+		// place relative to the fixed anchor
+		var x = growsRight ? anchorX : anchorX - w;
+		var y = growsDown  ? anchorY : anchorY - h;
+
+		crop.rect = {x: x, y: y, w: w, h: h};
+		return snapped;
+	}
+
+	document.getElementById('cropZoomIn').addEventListener('click', function()
+	{ setZoom(crop.scale * 1.3); });
+	document.getElementById('cropZoomOut').addEventListener('click', function()
+	{ setZoom(crop.scale / 1.3); });
+	document.getElementById('cropCancel').addEventListener('click', closeCrop);
+	function closeCrop()
+	{
+		cropModal.hidden = true;
+		uploadQueue.shift();
+		nextInQueue();
+	}
+	document.getElementById('cropConfirm').addEventListener('click', exportCrop);
+
+	// pointer interactions: resize handles, move crop box, pan image, pinch zoom
+	var pointers = {};
+	var drag = null;
+	var pinchStart = null;
+
+	cropStage.addEventListener('pointerdown', function(e)
 	{
 		e.preventDefault();
-		
-		var fileInput = document.querySelector('input[type="file"]');
-		fileInput.files = e.dataTransfer.files;
-		
-		var fileForm = document.querySelector('form.fileupload');
-		fileForm.action = '$__SERVER_PATH$__RANDOM_PATH/' + fileInput.files[0].name + '?redirect=yes';
-		fileForm.submit();
+		cropStage.setPointerCapture(e.pointerId);
+		pointers[e.pointerId] = {x: e.clientX, y: e.clientY};
+
+		var pts = Object.keys(pointers).map(function(id){ return pointers[id]; });
+		if(pts.length === 2)
+		{
+			pinchStart = {d: dist(pts[0], pts[1]), scale: crop.scale};
+			drag = null;
+			return;
+		}
+
+		var handle = e.target.closest ? e.target.closest('.crop-handle') : null;
+		if(handle)
+		{
+			drag = {mode: 'resize', dir: handle.getAttribute('data-dir'), sx: e.clientX, sy: e.clientY,
+				rx: crop.rect.x, ry: crop.rect.y, rw: crop.rect.w, rh: crop.rect.h};
+			// show the diagonal guide from the grabbed corner to its opposite
+			var dir = drag.dir;
+			var point = {nw:['w','n'], ne:['e','n'], sw:['w','s'], se:['e','s']}[dir];
+			var opp = {nw:['e','s'], ne:['w','s'], sw:['e','n'], se:['w','n']}[dir];
+			if(point && opp)
+			{
+				crop.diag = [point, opp];
+			}
+			else
+			{
+				crop.diag = null;
+			}
+			cropBox.classList.add('dragging');
+			renderCrop();
+			return;
+		}
+		var box = cropBox.getBoundingClientRect();
+		if(e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom)
+		{
+			cropBox.classList.add('dragging');
+			drag = {mode: 'move', sx: e.clientX, sy: e.clientY, rx: crop.rect.x, ry: crop.rect.y};
+		}
+		else
+		{
+			drag = {mode: 'pan', sx: e.clientX, sy: e.clientY, ox: crop.ox, oy: crop.oy};
+		}
+	});
+
+	cropStage.addEventListener('pointermove', function(e)
+	{
+		var cur = pointers[e.pointerId];
+		if(!cur) return;
+		cur.x = e.clientX;
+		cur.y = e.clientY;
+
+		var pts = Object.keys(pointers).map(function(id){ return pointers[id]; });
+		if(pts.length >= 2 && pinchStart)
+		{
+			var d = dist(pts[0], pts[1]);
+			if(d > 0) setZoom(pinchStart.scale * (d / pinchStart.d), CROP_MARGIN + crop.vw / 2, CROP_MARGIN + crop.vh / 2);
+			return;
+		}
+		if(!drag) return;
+
+		var dx = e.clientX - drag.sx;
+		var dy = e.clientY - drag.sy;
+		if(drag.mode === 'resize')
+		{
+			resizeRect(drag.dir, {x: drag.rx, y: drag.ry, w: drag.rw, h: drag.rh}, dx / crop.scale, dy / crop.scale);
+			renderCrop();
+		}
+		else if(drag.mode === 'move')
+		{
+			crop.rect.x = Math.min(Math.max(0, drag.rx + dx / crop.scale), crop.iw - crop.rect.w);
+			crop.rect.y = Math.min(Math.max(0, drag.ry + dy / crop.scale), crop.ih - crop.rect.h);
+			renderCrop();
+		}
+		else if(drag.mode === 'pan')
+		{
+			crop.ox = drag.ox + dx;
+			crop.oy = drag.oy + dy;
+			clampPan();
+			renderCrop();
+		}
+	});
+
+	function endPan(e)
+	{
+		if(pointers[e.pointerId]) delete pointers[e.pointerId];
+		pinchStart = null;
+		drag = null;
+		crop.diag = null;
+		cropBox.classList.remove('dragging');
+		renderCrop();
 	}
-};
+	cropStage.addEventListener('pointerup', endPan);
+	cropStage.addEventListener('pointercancel', endPan);
+	function dist(a, b)
+	{ return Math.hypot(a.x - b.x, a.y - b.y); }
+
+	// mouse wheel zoom
+	cropStage.addEventListener('wheel', function(e)
+	{
+		e.preventDefault();
+		var rect = cropStage.getBoundingClientRect();
+		var cx = e.clientX - rect.left;
+		var cy = e.clientY - rect.top;
+		var factor = e.deltaY > 0 ? 1.1 : 0.9;
+		setZoom(crop.scale / factor, cx, cy);
+	}, {passive: false});
+
+	function exportCrop()
+	{
+		var r = crop.rect;
+		var sx = Math.max(0, Math.min(crop.iw - r.w, r.x));
+		var sy = Math.max(0, Math.min(crop.ih - r.h, r.y));
+		var sw = Math.min(r.w, crop.iw - sx);
+		var sh = Math.min(r.h, crop.ih - sy);
+
+		var dpr = Math.min(2, window.devicePixelRatio || 1);
+		var outW = Math.max(1, Math.round(sw * dpr));
+		var outH = Math.max(1, Math.round(sh * dpr));
+		var canvas = document.createElement('canvas');
+		canvas.width = outW;
+		canvas.height = outH;
+		var ctx = canvas.getContext('2d');
+		ctx.drawImage(crop.img, sx, sy, sw, sh, 0, 0, outW, outH);
+
+		var ext = (crop.name.replace(/^.*[.]/, '') || 'png').toLowerCase();
+		var mime = (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : 'image/png';
+		var base = crop.name.replace(/\.[^.]*$/, '') || 'image';
+		var name = base + '-crop.' + (ext === 'jpg' || ext === 'jpeg' ? 'jpg' : 'png');
+
+		canvas.toBlob(function(blob)
+		{
+			if(!blob)
+			{
+				setFeedback('Could not process image.', 'error');
+				uploadQueue.shift();
+				nextInQueue();
+				cropModal.hidden = true;
+				return;
+			}
+			var outFile = new File([blob], name, {type: mime});
+			cropModal.hidden = true;
+			uploadQueue.shift();
+			stashFile(outFile);
+			nextInQueue();
+		}, mime, 0.9);
+	}
+
+	// ---- paste events ----
+	document.addEventListener('paste', function(e)
+	{
+		var items = e.clipboardData && e.clipboardData.items;
+		if(!items) return;
+		for(var i = 0; i < items.length; i++)
+		{
+			if(items[i].kind === 'file')
+			{
+				e.preventDefault();
+				handleFile(items[i].getAsFile());
+				return;
+			}
+		}
+	});
+
+	// ---- drag & drop ----
+	var dragDepth = 0;
+	['dragenter', 'dragover'].forEach(function(ev)
+	{
+		document.addEventListener(ev, function(e)
+		{
+			e.preventDefault();
+			if(e.type === 'dragenter') dragDepth++;
+			dropHint.classList.add('show');
+		});
+	});
+	document.addEventListener('dragleave', function(e)
+	{
+		e.preventDefault();
+		dragDepth--;
+		if(dragDepth <= 0) { dragDepth = 0; dropHint.classList.remove('show'); }
+	});
+	document.addEventListener('drop', function(e)
+	{
+		e.preventDefault();
+		dragDepth = 0;
+		dropHint.classList.remove('show');
+		var files = e.dataTransfer && e.dataTransfer.files;
+		if(!files || !files.length) return;
+		Array.prototype.slice.call(files).forEach(handleFile);
+	});
+
+	// ---- paste from clipboard (via Paste button) ----
+	function pasteFromClipboard()
+	{
+		if(!navigator.clipboard || !navigator.clipboard.read)
+		{
+			setFeedback('This browser does not support clipboard reading. Use Ctrl/Cmd+V instead.', 'error');
+			return;
+		}
+		var proceed = function()
+		{
+			navigator.clipboard.read().then(function(items)
+			{
+				var handled = false;
+				for(var i = 0; i < items.length; i++)
+				{
+					var types = items[i].types;
+					// prefer files (images, pdf, etc.) over any text
+					var fileType = null;
+					for(var t = 0; t < types.length; t++)
+					{
+						if(types[t] !== 'text/plain') { fileType = types[t]; break; }
+					}
+					if(fileType)
+					{
+						items[i].getType(fileType).then(function(blob)
+						{
+							var ext = blob.type.split('/')[1] || '';
+							if(ext === 'jpeg') ext = 'jpg';
+							var name = 'clipboard-' + Date.now() + '.' + ext;
+							handleFile(new File([blob], name, {type: blob.type}));
+						}).catch(function()
+						{
+							setFeedback('Could not read the clipboard file.', 'error');
+						});
+						handled = true;
+						break;
+					}
+					// otherwise, if it carries plain text, put it in the textarea
+					if(types.indexOf('text/plain') >= 0)
+					{
+						items[i].getType('text/plain').then(function(blob)
+						{
+							return blob.text();
+						}).then(function(text)
+						{
+							textEl.value = text;
+							textEl.focus();
+							btnDownload.disabled = extractUrls(textEl.value).length === 0;
+						}).catch(function()
+						{
+							setFeedback('Could not read clipboard text.', 'error');
+						});
+						handled = true;
+						break;
+					}
+				}
+				if(!handled) setFeedback('No files or text found in the clipboard.', 'error');
+			}).catch(function()
+			{
+				setFeedback('Clipboard read denied. Use Ctrl/Cmd+V instead.', 'error');
+			});
+		};
+		// ask for permission first, as recommended
+		if(navigator.permissions && navigator.permissions.query)
+		{
+			navigator.permissions.query({name: 'clipboard-read'}).then(function(perm)
+			{
+				// granted or will be prompted by the read() call
+				if(perm.state === 'granted' || perm.state === 'prompt') proceed();
+				else setFeedback('Clipboard permission denied. Use Ctrl/Cmd+V instead.', 'error');
+			}).catch(proceed);
+		}
+		else
+		{
+			proceed();
+		}
+	}
+
+	btnText.addEventListener('click', stashText);
+	btnDownload.addEventListener('click', downloadUrl);
+
+	// ---- cli cheatsheet ----
+	(function()
+	{
+		var origin = window.location.origin;
+		var pathname = window.location.pathname.replace(/\/$/, '');
+		var base = origin + pathname;
+		var randId = newRandomId();
+		var commands = [
+			// upload (plain)
+			'curl -F file=@"$FILE" ' + base + '/',
+			'curl --data-binary @- ' + base + '/"${FILE##*/}" < "$FILE"',
+			// download (plain)
+			'curl -JOL ' + base + '/"${FILE##*/}"',
+			'curl -s ' + base + '/"${FILE##*/}" >"$FILE"',
+			// upload encrypted
+			'openssl aes-256-cbc -md sha256 -pbkdf2 -iter 100000 -salt -pass pass:"$PASS" < "$FILE" | curl --data-binary @- ' + base + '/' + randId,
+			// download decrypted
+			'curl -s ' + base + '/' + randId + ' | openssl aes-256-cbc -d -pbkdf2 -iter 100000 -pass pass:"$PASS" > "$FILE"'
+		];
+		var cmds = document.querySelectorAll('.cmd');
+		for(var i = 0; i < cmds.length && i < commands.length; i++)
+		{
+			var code = cmds[i].querySelector('code');
+			var btn = cmds[i].querySelector('button');
+			if(code) code.textContent = commands[i];
+			if(btn) btn.setAttribute('data-copy', commands[i]);
+		}
+	})();
+
+	// ---- cli cheatsheet copy buttons ----
+	document.addEventListener('click', function(e)
+	{
+		var btn = e.target.closest && e.target.closest('button[data-copy]');
+		if(btn) copyUrl(btn.getAttribute('data-copy'), btn);
+	});
+
+	// keyboard: Ctrl/Cmd+Enter stashes text
+	document.addEventListener('keydown', function(e)
+	{
+		if((e.ctrlKey || e.metaKey) && e.key === 'Enter')
+		{
+			stashText();
+		}
+	});
+})();
 </script>
 </body>
 </html>

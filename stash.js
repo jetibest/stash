@@ -5,23 +5,65 @@ const path = require('path');
 const stream = require('stream');
 const child_process = require('child_process');
 const crypto = require('crypto');
+const http = require('http');
+const https = require('https');
 const express = require('express'); // npm install express
 const busboy = require('busboy'); // npm install busboy
 
-// support at least 5GiB per 6 hours by default, resulting in a stash_cache directory of at most 10GiB
-// by default listens locally (127.0.0.1), change to 0.0.0.0 to make available publicly
-// by default listens on port 80, the default HTTP port but privileged (only root), change to 8080 for regular users
-
-const JAIL_PATH = path.resolve('stash_cache/');
-const MAX_WRITE_BYTES = 5 * 1024 * 1024 * 1024;
-const CLEAN_INTERVAL_MINUTES = 360;
-const DEFAULT_HOST = '127.0.0.1';
-const DEFAULT_PORT = 80;
-
-if(JAIL_PATH.startsWith('/stash_cache'))
+function parse_size(value, fallback)
 {
-	JAIL_PATH = '/var/lib/stash_cache';
+	if(value === null || value === undefined) return fallback;
+	var m = /^([0-9]+(?:\.[0-9]+)?)\s*(b|kib|mib|gib|tib|kb|mb|gb|tb|)?$/i.exec(String(value));
+	if(!m) return fallback;
+	var number = parseFloat(m[1]);
+	if(!(number >= 0) || !isFinite(number)) return fallback;
+	var units = {b: 1, kb: 1e3, kib: 1024, mb: 1e6, mib: 1024 * 1024, gb: 1e9, gib: 1024 ** 3, tb: 1e12, tib: 1024 ** 4};
+	var multiplier = (m[2] && units[m[2].toLowerCase()]) || 1;
+	return Math.floor(number * multiplier);
 }
+
+function parse_positive_int(value, fallback)
+{
+	var n = parseInt(value, 10);
+	return (n >= 1) ? n : fallback;
+}
+const JAIL_PATH = path.resolve(process.env.STASH_JAIL_PATH || '/var/cache/stash/');
+const MAX_WRITE_BYTES = parse_size(process.env.STASH_MAX_WRITE_BYTES, 5 * 1024 * 1024 * 1024);
+const MAX_FILE_BYTES = parse_size(process.env.STASH_MAX_FILE_BYTES, MAX_WRITE_BYTES);
+const MAX_FIELD_BYTES = parse_size(process.env.STASH_MAX_FIELD_BYTES, 16 * 1024 * 1024);
+const MIN_FREE_BYTES = parse_size(process.env.STASH_MIN_FREE_BYTES, 4 * 1024 * 1024 * 1024);
+const CLEAN_INTERVAL_MINUTES = parse_positive_int(process.env.STASH_CLEAN_INTERVAL_MINUTES, 360);
+const LISTEN_ADDRESS = process.env.STASH_LISTEN_ADDRESS || '0.0.0.0';
+const LISTEN_PORT = parseInt(process.env.STASH_LISTEN_PORT, 10) || 8080;
+
+var server;
+var cleanup_timer;
+
+function graceful_shutdown()
+{
+	console.log('Received signal to shutdown. Starting graceful shutdown...');
+	
+	clearTimeout(cleanup_timer);
+	
+	if(server) server.close(err => {
+		if(err)
+		{
+			console.error('Error during server close:', err);
+			process.exit(1);
+		}
+		
+		console.log('Graceful shutdown completed.');
+		process.exit(0);
+	});
+	
+	setTimeout(() =>
+	{
+		console.log('Could not close server in time, forcing shutdown.');
+		process.exit(1);
+	}, 10000);
+}
+process.on('SIGTERM', graceful_shutdown);
+process.on('SIGINT', graceful_shutdown);
 
 // parse args:
 var serverOptions = {};
@@ -33,17 +75,17 @@ catch(err)
 {
 	if(/^[0-9]+$/g.test(process.argv[2]))
 	{
-		serverOptions.host = DEFAULT_HOST;
-		serverOptions.port = parseInt(process.argv[2]) || DEFAULT_PORT;
+		serverOptions.hostname = LISTEN_ADDRESS;
+		serverOptions.port = parseInt(process.argv[2]) || LISTEN_PORT;
 	}
 	else
 	{
-		serverOptions.host = process.argv[2] || DEFAULT_HOST;
-		serverOptions.port = parseInt(process.argv[3]) || DEFAULT_PORT;
+		serverOptions.hostname = process.argv[2] || LISTEN_ADDRESS;
+		serverOptions.port = parseInt(process.argv[3]) || LISTEN_PORT;
 	}
 }
-
 const indexPage = fs.readFileSync('index.html');
+const encryptedPage = fs.readFileSync('encrypted.html');
 
 const stat = {
 	randomIds: {},
@@ -54,6 +96,28 @@ function sanity_check(p)
 {
 	var real_p = path.resolve(p);
 	return real_p && real_p.startsWith(JAIL_PATH) && real_p !== '/';
+}
+
+function has_disk_space()
+{
+	try
+	{
+		var stats = fs.statfsSync(JAIL_PATH);
+		var free = stats.bsize * stats.bavail;
+		var total = stats.bsize * stats.blocks;
+		if(MIN_FREE_BYTES > 0 && free < MIN_FREE_BYTES)
+		{
+			console.error('Not enough free disk space: ' + free + ' bytes free, minimum is ' + MIN_FREE_BYTES);
+			return false;
+		}
+		return true;
+	}
+	catch(err)
+	{
+		// statfs is best-effort: if it fails, do not block uploads
+		console.error('Could not determine free disk space: ' + err);
+		return true;
+	}
 }
 
 function cleanup()
@@ -69,11 +133,12 @@ function cleanup()
 	});
 	cp.on('close', function()
 	{
-		console.log('cleanup(): Clean-up completed for ' + stat.writtenBytes + ' bytes.');
+		var diskSpace = has_disk_space() ? '' : ' (not enough free disk space)';
+		console.log('cleanup(): Clean-up completed for ' + stat.writtenBytes + ' bytes written.' + diskSpace);
 		
 		stat.writtenBytes = 0;
 		
-		setTimeout(cleanup, CLEAN_INTERVAL_MINUTES * 60000);
+		cleanup_timer = setTimeout(cleanup, CLEAN_INTERVAL_MINUTES * 60000);
 	});
 }
 
@@ -83,6 +148,10 @@ function stream_write(chunk, encoding, cb)
 	{
 		console.error('MAX_WRITE_BYTES (' + MAX_WRITE_BYTES + ') reached, cleanup is every ' + CLEAN_INTERVAL_MINUTES + ' minutes');
 		return cb(new Error('No space left on device. Wait for cleanup.'));
+	}
+	if(!has_disk_space())
+	{
+		return cb(new Error('Not enough free disk space. Wait for cleanup or free up space.'));
 	}
 	stat.writtenBytes += chunk.length;
 	cb(null, chunk);
@@ -131,14 +200,97 @@ async function createWriteStream(real_path)
 	return fs.createWriteStream(real_path);
 }
 
+function parse_disposition_filename(header)
+{
+	if(!header) return null;
+	var m = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/i.exec(header);
+	if(m) return decodeURIComponent(m[1].trim());
+	m = /filename\s*=\s*"([^"]*)"/i.exec(header);
+	if(m) return m[1];
+	m = /filename\s*=\s*([^;]+)/i.exec(header);
+	if(m) return m[1].trim();
+	return null;
+}
+
+function sanitize_basename(name)
+{
+	var base = String(name || 'download').replace(/[\\/]/g, '_').replace(/^\.+/, '');
+	return base || 'download';
+}
+
+// download a remote url into the jail cache, returning the resulting
+// {filename, bytes} on success. the filename is taken from the
+// Content-Disposition header if present, else the last url path segment.
+function download_url(url)
+{
+	return new Promise((resolve, reject) =>
+	{
+		var parsed;
+		try
+		{
+			parsed = new URL(url);
+		}
+		catch(err)
+		{
+			return reject(new Error('Invalid URL: ' + url));
+		}
+		var lib = parsed.protocol === 'https:' ? https : (parsed.protocol === 'http:' ? http : null);
+		if(!lib)
+		{
+			return reject(new Error('Unsupported protocol: ' + parsed.protocol));
+		}
+		
+		var request = lib.get(url, function(res)
+		{
+			if(res.statusCode >= 300 && res.statusCode < 400 && res.headers.location)
+			{
+				// follow redirect
+				res.resume();
+				return download_url(new URL(res.headers.location, url).href).then(resolve, reject);
+			}
+			if(res.statusCode >= 400)
+			{
+				res.resume();
+				return reject(new Error('Download failed: HTTP ' + res.statusCode));
+			}
+			
+			var filename = sanitize_basename(parse_disposition_filename(res.headers['content-disposition']) || path.basename(parsed.pathname));
+			var real_path = path.resolve(path.join(JAIL_PATH, filename));
+			if(!sanity_check(real_path))
+			{
+				res.resume();
+				return reject(new Error('Invalid download filename.'));
+			}
+			
+			var writtenBytes = 0;
+			var limit = new stream.Transform({
+				transform: function(chunk, enc, cb)
+				{
+					writtenBytes += chunk.length;
+					if(writtenBytes > MAX_FILE_BYTES)
+					{
+						return cb(new Error('File exceeds ' + MAX_FILE_BYTES + ' byte limit.'));
+					}
+					stream_write(chunk, enc, cb);
+				}
+			});
+			createWriteStream(real_path).catch(reject).then(fh =>
+			{
+				res.pipe(limit.on('error', reject)).pipe(fh.on('error', reject)).on('error', reject).on('finish', () => resolve({filename: filename, bytes: writtenBytes}));
+			});
+		});
+		request.on('error', reject);
+	});
+}
+
 function req_pipe(req, real_path)
 {
 	return new Promise((resolveOnce, rejectOnce) =>
 	{
-		var resolve = function()
+		var resolve = function(val)
 		{
 			resolve = function(){};
-			resolveOnce();
+			resolveOnce(val);
 		};
 		var reject = function()
 		{
@@ -152,16 +304,25 @@ function req_pipe(req, real_path)
 		{
 			console.log('using busboy');
 			// use busboy to parse file
-			var bb = new busboy({
+			var bb = busboy({
 				headers: req.headers,
-				limits: {fieldSize: 1024 * 1024 * 16} // 16 MiB of text data maximum (through textarea)
+				limits: {fieldSize: MAX_FIELD_BYTES} // maximum text data through textarea
 			});
 			
 			var hasData = false;
 			bb.on('field', function(fieldName, value)
 			{
 				console.log('field received with name: ' + fieldName);
-				if(fieldName === 'data' && !hasData)
+				if(fieldName === 'download' && !hasData)
+				{
+					// server-side download of a remote url into the cache
+					hasData = true;
+					download_url(value).then(function(result)
+					{
+						resolve(result);
+					}, reject);
+				}
+				else if(fieldName === 'data' && !hasData)
 				{
 					hasData = true;
 					createWriteStream(real_path).catch(reject).then(fh => {
@@ -169,15 +330,37 @@ function req_pipe(req, real_path)
 					});
 				}
 			});
-			bb.on('file', function(fieldName, file, fileName, encoding, mimeType)
+			bb.on('file', function(fieldName, file, info)
 			{
-				console.log('file received with name: ' + fieldName);
-				if(fieldName === 'data' && !hasData)
+				var fileName = (info && (info.filename !== undefined ? info.filename : info)) || '';
+				console.log('file received with name: ' + fieldName + ' (' + fileName + ')');
+				if((fieldName === 'file' || fieldName === 'data') && !hasData)
 				{
 					hasData = true;
-					createWriteStream(real_path).catch(reject).then(fh =>
+					// when posting to the root (e.g. `curl -F file=@x stash/`),
+					// the target is the jail root itself; use the multipart
+					// filename so the file gets a real stash path/name.
+					var target = real_path;
+					if(path.resolve(target) === path.resolve(JAIL_PATH))
 					{
-						file.pipe(new stream.Transform({transform: stream_write}).on('error', reject)).pipe(fh.on('error', reject)).on('error', reject).on('finish', resolve);
+						target = path.join(JAIL_PATH, sanitize_basename(fileName));
+					}
+					console.log('file upload target: ' + target + ' (filename=' + fileName + ')');
+					var writtenBytes = 0;
+					var fileLimit = new stream.Transform({
+						transform: function(chunk, enc, cb)
+						{
+							writtenBytes += chunk.length;
+							if(writtenBytes > MAX_FILE_BYTES)
+							{
+								return cb(new Error('File exceeds ' + MAX_FILE_BYTES + ' byte limit.'));
+							}
+							stream_write(chunk, enc, cb);
+						}
+					});
+					createWriteStream(target).catch(reject).then(fh =>
+					{
+						file.pipe(fileLimit.on('error', reject)).pipe(fh.on('error', reject)).on('error', reject).on('finish', resolve);
 					});
 				}
 			});
@@ -234,13 +417,23 @@ function generate_random_id()
 	});
 }
 
+function set_cors_headers(res)
+{
+	res.set('Access-Control-Allow-Origin', '*');
+	res.set('Access-Control-Allow-Methods', 'GET, HEAD, POST, PUT, OPTIONS');
+	res.set('Access-Control-Allow-Headers', '*');
+	res.set('Access-Control-Expose-Headers', '*');
+	res.set('Access-Control-Max-Age', '86400');
+}
+
 function stash_servlet(req, res, next)
 {
 	if(!res || res.headersSent) return next();
-	
+
 	var url_path = req.url.replace(/[?].*$/g, '');
+	var is_get = req.method === 'GET' || req.method === 'HEAD';
 	
-	if(url_path === '/' || url_path === '')
+	if(is_get && (url_path === '/' || url_path === ''))
 	{
 		console.log('stash homepage');
 		
@@ -251,7 +444,9 @@ function stash_servlet(req, res, next)
 			next();
 		}).then(function(randomId)
 		{
-			res.set('Content-Type', 'text/html; charset=UTF-8').status(200).end(indexPage.toString().replace(/[$]__RANDOM_PATH/g, function()
+			res.set('Content-Type', 'text/html; charset=UTF-8');
+			res.set('Cache-Control', 'no-store');
+			res.status(200).end(indexPage.toString().replace(/[$]__RANDOM_PATH/g, function()
 			{
 				return randomId;
 			}).replace(/[$]__SERVER_PATH/g, function()
@@ -261,6 +456,18 @@ function stash_servlet(req, res, next)
 			
 			next();
 		});
+	}
+	else if(is_get && url_path.indexOf('/encrypted/') === 0)
+	{
+		// serve the client-side decryption page. the encrypted file data is
+		// stored as a normal stash entry at <SERVER_PATH>/<encName>, and the
+		// decryption key lives in the url #fragment (never sent to us), so we
+		// cannot read the plaintext.
+		console.log('stash encrypted viewer: ' + url_path);
+		res.set('Content-Type', 'text/html; charset=UTF-8');
+		res.set('Cache-Control', 'no-store');
+		res.status(200).end(encryptedPage.toString());
+		next();
 	}
 	else if(req.method === 'POST' || req.method === 'PUT')
 	{
@@ -279,8 +486,8 @@ function stash_servlet(req, res, next)
 		req_pipe(req, real_path).catch(err =>
 		{
 			console.error(err);
-			res.status(500).end('error: Internal write error.\n');
-		}).then(() =>
+			res.status(500).end('error: ' + (err && err.message ? err.message : 'Internal write error.') + '\n');
+		}).then((downloadResult) =>
 		{
 			if(res && !res.headersSent)
 			{
@@ -289,6 +496,13 @@ function stash_servlet(req, res, next)
 				{
 					// use temporary redirect (302 Found)
 					res.redirect(302, './' + req.url.replace(/[?].*$/g, '').replace(/^.*[/]/g, ''));
+				}
+				else if(downloadResult && typeof downloadResult === 'object' && downloadResult.filename)
+				{
+					// download result: report the url where the stash can be found
+					var base = path.join((req.headers['x-forwarded-original-path'] || ''), (req.originalUrl + '')).replace(/[^/]*$/g, '');
+					var stashUrl = path.join(base, downloadResult.filename);
+					res.status(200).end('ok ' + stashUrl + ' ' + downloadResult.bytes + '\n');
 				}
 				else
 				{
@@ -315,9 +529,34 @@ function stash_error(req, res, next)
 }
 
 const app = express({strict: true});
+app.use(function(req, res, next)
+{
+	set_cors_headers(res);
+	if(req.method === 'OPTIONS')
+	{
+		res.status(204).end();
+		return;
+	}
+	next();
+});
 app.use(stash_servlet);
 app.use(express.static(JAIL_PATH, {redirect: false}));
 app.use(stash_error);
-app.listen(serverOptions);
+server = app.listen(serverOptions);
 
-cleanup();
+console.log('Server listening at ', serverOptions);
+
+try
+{
+	fs.mkdirSync(JAIL_PATH, {recursive: true});
+}
+catch(err)
+{
+	console.error('Could not create jail path ' + JAIL_PATH + ': ' + err);
+}
+if(!has_disk_space())
+{
+	console.error('Warning: starting with low disk space, uploads will be rejected until space is freed or files expire.');
+}
+
+cleanup_timer = cleanup();

@@ -1,10 +1,11 @@
 [Unit]
-Description=Stash webserver
+Description=stash
 
 [Service]
-Type=simple
-WorkingDirectory=/srv/stash
-ExecStart=/srv/stash/stash.js 8097
+Type=forking
+WorkingDirectory=/opt/stash
+ExecStart=/opt/stash/podman-run.sh start
+ExecStop=/opt/stash/podman-run.sh stop
 Restart=always
 RestartSec=30s
 
